@@ -5,18 +5,17 @@
 name: Report Artifacts
 
 on:
-  workflow_call:
-    inputs:
-      pull_request_number:
-        required: true
-        type: string
-      run_id:
-        required: true
-        type: string
+  workflow_run:
+    workflows:
+      - Build Containers
+    types:
+      - completed
+    branches-ignore:
+      - main
 
 concurrency:
   group: report
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 env:
   TZ: Europe/Berlin
@@ -28,8 +27,13 @@ defaults:
 jobs:
   report_artifacts:
     runs-on: ubuntu-latest
-    if: github.repository_owner == 'seqan'
     steps:
+      - name: Dump GitHub context
+        env:
+          GITHUB_CONTEXT: ${{ toJson(github) }}
+        run: |
+          echo "$GITHUB_CONTEXT"
+
       - name: Create Comment Body
         env:
           GH_TOKEN: ${{ github.token }}
