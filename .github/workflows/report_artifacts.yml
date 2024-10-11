@@ -51,8 +51,11 @@ jobs:
             echo "Artifacts available for download:"
             echo "| Artifact Name | Download Link |"
             echo "|---------------|---------------|"
-            jq -r '.artifacts[] | "| \(.name) | \(.archive_download_url) |"' artifacts.json
+            jq -r '.artifacts[] | "| \(.name) | https://github.com/eseiler/actions/actions/runs/${{ github.event.workflow_run.id }}/artifacts/\(.id) |"' artifacts.json
           } > report.md
+
+      - name: Body
+        run: cat report.md
 
       - name: Find Comment
         uses: peter-evans/find-comment@v3
