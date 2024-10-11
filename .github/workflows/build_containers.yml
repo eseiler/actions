@@ -115,3 +115,11 @@ jobs:
           author_name: seqan-actions[bot]
           author_email: seqan-actions@users.noreply.github.com
           message: 'Update Package Versions'
+
+  report_artifacts:
+    if: github.repository_owner == 'seqan' && github.event_name == 'pull_request'
+    needs: build
+    uses: seqan/actions/.github/workflows/report_artifacts.yml@main
+    with:
+      pull_request_number: ${{ github.event.pull_request.number }}
+      run_id: ${{ github.run_id }}
