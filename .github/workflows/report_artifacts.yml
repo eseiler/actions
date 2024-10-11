@@ -22,7 +22,7 @@ env:
 
 defaults:
   run:
-    shell: bash -Eexuo pipefail {0}
+    shell: bash -Eeuo pipefail {0}
 
 jobs:
   report_artifacts:
@@ -34,13 +34,18 @@ jobs:
         run: |
           echo "$GITHUB_CONTEXT"
 
+      - name: Try getting IDs
+        run: |
+          echo "Run ID: ${{ github.event.workflow_run.id }}"
+          echo "PR: ${{ github.event.workflow_run.pull_requests[0].number }}"
+
       - name: Create Comment Body
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh api \
             -H "Accept: application/vnd.github+json" \
-            /repos/seqan/actions/actions/runs/${{ inputs.run_id }}/artifacts > artifacts.json
+            /repos/seqan/actions/actions/runs/${{ github.event.workflow_run.id }}/artifacts > artifacts.json
 
           {
             echo "Artifacts available for download:"
@@ -53,14 +58,13 @@ jobs:
         uses: peter-evans/find-comment@v3
         id: find_comment
         with:
-          issue-number: ${{ inputs.pull_request_number }}
+          issue-number: ${{ github.event.workflow_run.pull_requests[0].number }}
           body-includes: Artifacts available for download
 
       - name: Create
         uses: peter-evans/create-or-update-comment@v4
         with:
           comment-id: ${{ steps.find_comment.outputs.comment-id }}
-          token: ${{ secrets.SEQAN_ACTIONS_PAT }}
-          issue-number: ${{ inputs.pull_request_number }}
+          issue-number: ${{ github.event.workflow_run.pull_requests[0].number }}
           body-path: report.md
           edit-mode: replace
