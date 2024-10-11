@@ -1,0 +1,62 @@
+# SPDX-FileCopyrightText: 2006-2024 Knut Reinert & Freie Universität Berlin
+# SPDX-FileCopyrightText: 2016-2024 Knut Reinert & MPI für molekulare Genetik
+# SPDX-License-Identifier: CC-BY-4.0
+
+name: Report Artifacts
+
+on:
+  workflow_call:
+    inputs:
+      pull_request_number:
+        required: true
+        type: string
+      run_id:
+        required: true
+        type: string
+
+concurrency:
+  group: report
+  cancel-in-progress: false
+
+env:
+  TZ: Europe/Berlin
+
+defaults:
+  run:
+    shell: bash -Eexuo pipefail {0}
+
+jobs:
+  report_artifacts:
+    runs-on: ubuntu-latest
+    if: github.repository_owner == 'seqan'
+    steps:
+      - name: Create Comment Body
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api \
+            -H "Accept: application/vnd.github+json" \
+            /repos/seqan/actions/actions/runs/${{ inputs.run_id }}/artifacts > artifacts.json
+
+          {
+            echo "Artifacts available for download:"
+            echo "| Artifact Name | Download Link |"
+            echo "|---------------|---------------|"
+            jq -r '.artifacts[] | "| \(.name) | \(.archive_download_url) |"' artifacts.json
+          } > report.md
+
+      - name: Find Comment
+        uses: peter-evans/find-comment@v3
+        id: find_comment
+        with:
+          issue-number: ${{ inputs.pull_request_number }}
+          body-includes: Artifacts available for download
+
+      - name: Create
+        uses: peter-evans/create-or-update-comment@v4
+        with:
+          comment-id: ${{ steps.find_comment.outputs.comment-id }}
+          token: ${{ secrets.SEQAN_ACTIONS_PAT }}
+          issue-number: ${{ inputs.pull_request_number }}
+          body-path: report.md
+          edit-mode: replace
