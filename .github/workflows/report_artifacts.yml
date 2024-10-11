@@ -45,7 +45,7 @@ jobs:
         run: |
           gh api \
             -H "Accept: application/vnd.github+json" \
-            /repos/seqan/actions/actions/runs/${{ github.event.workflow_run.id }}/artifacts > artifacts.json
+            /repos/eseiler/actions/actions/runs/${{ github.event.workflow_run.id }}/artifacts > artifacts.json
 
           {
             echo "Artifacts available for download:"
