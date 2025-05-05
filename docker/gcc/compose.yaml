@@ -16,8 +16,6 @@ services:
     build:
       args:
         GCC_VERSION: 12
-      tags:
-        - ghcr.io/seqan/gcc-third-latest
 
   gcc-13:
     image: ghcr.io/seqan/gcc-13
@@ -26,7 +24,7 @@ services:
       args:
         GCC_VERSION: 13
       tags:
-        - ghcr.io/seqan/gcc-second-latest
+        - ghcr.io/seqan/gcc-third-latest
 
   gcc-14:
     image: ghcr.io/seqan/gcc-14
@@ -34,5 +32,14 @@ services:
     build:
       args:
         GCC_VERSION: 14
+      tags:
+        - ghcr.io/seqan/gcc-second-latest
+
+  gcc-15:
+    image: ghcr.io/seqan/gcc-15
+    pull_policy: never
+    build:
+      args:
+        GCC_VERSION: 15
       tags:
         - ghcr.io/seqan/gcc-latest
