@@ -20,6 +20,10 @@ inputs:
   gpg_passphrase:
     description: "Passphrase for GPG key."
     required: false
+  auto_merge:
+    description: "Enable auto-merge on the created or updated PR."
+    required: false
+    default: 'false'
 runs:
   using: 'composite'
   steps:
@@ -77,6 +81,7 @@ runs:
         git_commit_gpgsign: true
 
     - name: Open PR
+      id: open_pr
       uses: peter-evans/create-pull-request@v8
       with:
         token: ${{ inputs.token }}
@@ -91,3 +96,12 @@ runs:
         add-paths: |
           ${{ inputs.package_lock_file }}
           ${{ steps.update_cpm.outputs.cpm_file}}
+
+    - name: Enable auto-merge
+      if: inputs.auto_merge == 'true' && steps.open_pr.outputs.pull-request-number
+      continue-on-error: true
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.token }}
+      working-directory: repo
+      run: gh pr merge --auto --merge "${{ steps.open_pr.outputs.pull-request-number }}"
