@@ -5,7 +5,7 @@
 # SPDX-License-Identifier: CC-BY-4.0
 
 # 20 is just a default value in case no version is provided
-ARG CLANG_VERSION=20
+ARG CLANG_VERSION=22
 FROM ghcr.io/seqan/clang-${CLANG_VERSION}
 
 ARG CLANG_VERSION
