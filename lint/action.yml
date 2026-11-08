@@ -1,121 +1,38 @@
-# SPDX-FileCopyrightText: 2006-2025 Knut Reinert & Freie Universität Berlin
-# SPDX-FileCopyrightText: 2016-2025 Knut Reinert & MPI für molekulare Genetik
+# SPDX-FileCopyrightText: 2006-2026 Knut Reinert & Freie Universität Berlin
+# SPDX-FileCopyrightText: 2016-2026 Knut Reinert & MPI für molekulare Genetik
 # SPDX-License-Identifier: CC-BY-4.0
 
 name: 'Lint'
-description: 'Run clang-format and cmake-format'
+description: 'Format changed files in place with pinned clang-format and cmake-format. Needs no token and no secrets.'
 inputs:
-  clang_format:
-    description: "clang-format version to use."
+  path:
+    description: "Work tree to format."
     required: false
-    default: 22
-  token:
-    description: "Personal Access Token (PAT)."
+    default: "."
+  base:
+    description: "Base commit; files changed since merge-base(base, HEAD) are formatted."
     required: true
-  gpg_key:
-    description: "Private GPG key for signing commits."
-    required: true
-  gpg_passphrase:
-    description: "Passphrase for GPG key."
-    required: true
+  config:
+    description: "Directory containing .clang-format and .cmake-format.yaml."
+    required: false
+    default: "."
 runs:
   using: 'composite'
   steps:
-    - name: Error if not a pull request
-      if: github.event_name != 'pull_request' && github.event_name != 'pull_request_target'
+    - name: Install formatters
       shell: bash
-      run: echo "::error title=Error::This action can only be run on pull requests."; exit 1
+      run: |
+        python3 -m venv "${RUNNER_TEMP}/lint-venv"
+        "${RUNNER_TEMP}/lint-venv/bin/pip" install --quiet --require-hashes --no-deps --only-binary=:all: \
+          -r "${GITHUB_ACTION_PATH}/requirements.txt"
 
-    - name: Checkout
-      uses: actions/checkout@v7
-      with:
-        fetch-depth: 0
-        ref: "refs/pull/${{ github.event.number }}/merge"
-        allow-unsafe-pr-checkout: true
-        submodules: false
-        token: ${{ inputs.token }}
-
-    - name: Add label
+    - name: Format
+      shell: bash
+      working-directory: ${{ inputs.path }}
       env:
-          GITHUB_TOKEN: ${{ inputs.token }}
-          PR_URL: ${{ github.event.pull_request.html_url }}
-      shell: bash
-      run: gh pr edit $PR_URL --add-label "lint"
-
-    - name: Get changed files
-      id: changed_files
-      shell: bash
-      run: |
-        CPP_LIST=$(git diff --name-only --diff-filter=ACMRT ${{ github.event.pull_request.base.sha }} | \
-        { grep -v -E "(lib/|contrib/|submodules/)" || test $? = 1; } | \
-        { grep -E "(\.cpp|\.hpp)$" || test $? = 1; } | xargs)
-        echo "cpp_list=$CPP_LIST" >> $GITHUB_OUTPUT
-
-        CMAKE_LIST=$(git diff --name-only --diff-filter=ACMRT ${{ github.event.pull_request.base.sha }} | \
-        { grep -v -E "(lib/|contrib/|submodules/)" || test $? = 1; } | \
-        { grep -E "(\.cmake|CMakeLists.txt)$" || test $? = 1; } | xargs)
-        echo "cmake_list=$CMAKE_LIST" >> $GITHUB_OUTPUT
-
-    - name: Switch to fork
-      shell: bash
-      run: |
-        git remote add fork ${{ github.event.pull_request.head.repo.html_url }}
-        git fetch fork ${{ github.event.pull_request.head.ref }}
-        git checkout --force --track fork/${{ github.event.pull_request.head.ref }}
-
-    - name: Install Run clang-format
-      if: ${{ steps.changed_files.outputs.cpp_list }}
-      shell: bash
-      run: |
-        wget --quiet --retry-connrefused --output-document "/tmp/clang-format" \
-          "https://github.com/cpp-linter/clang-tools-static-binaries/releases/latest/download/clang-format-${{ inputs.clang_format }}_linux-amd64"
-        chmod +x /tmp/clang-format
-
-    - name: Run clang-format
-      if: ${{ steps.changed_files.outputs.cpp_list }}
-      shell: bash
-      run: |
-        /tmp/clang-format --style=file -i ${{ steps.changed_files.outputs.cpp_list }}
-
-    - name: Run cmake-format
-      if: ${{ steps.changed_files.outputs.cmake_list }}
-      uses: PuneetMatharu/cmake-format-lint-action@v1.0.4
-      with:
-        args: --config-files .cmake-format.yaml --in-place
-
-    - name: Check git status
-      id: git_status
-      shell: bash
-      run: |
-        if [[ -z $(git status -uno --porcelain) ]]; then
-          echo "commit_required=" >> $GITHUB_OUTPUT
-        else
-          echo "commit_required=true" >> $GITHUB_OUTPUT
-        fi
-
-    - name: Import GPG key
-      if: ${{ steps.git_status.outputs.commit_required }}
-      uses: crazy-max/ghaction-import-gpg@v7
-      with:
-        gpg_private_key: ${{ inputs.gpg_key }}
-        passphrase: ${{ inputs.gpg_passphrase }}
-        git_user_signingkey: true
-        git_commit_gpgsign: true
-
-    - name: Commit changes
-      if: ${{ steps.git_status.outputs.commit_required }}
-      shell: bash
-      run: |
-        git config user.name "seqan-actions[bot]"
-        git config user.email "seqan-actions@users.noreply.github.com"
-        git add .
-        git commit -m 'chore(lint): formatting'
-        git push fork ${{ github.event.pull_request.head.ref }}
-
-    - name: Remove label
-      if: ${{ !steps.git_status.outputs.commit_required }}
-      env:
-          GITHUB_TOKEN: ${{ inputs.token }}
-          PR_URL: ${{ github.event.pull_request.html_url }}
-      shell: bash
-      run: gh pr edit $PR_URL --remove-label "lint"
+        BASE: ${{ inputs.base }}
+        CONFIG: ${{ inputs.config }}
+        CLANG_FORMAT: ${{ runner.temp }}/lint-venv/bin/clang-format
+        CMAKE_FORMAT: ${{ runner.temp }}/lint-venv/bin/cmake-format
+        PYTHON: ${{ runner.temp }}/lint-venv/bin/python
+      run: '"${GITHUB_ACTION_PATH}/format.sh" "${BASE}" "$(realpath "${CONFIG}")"'
