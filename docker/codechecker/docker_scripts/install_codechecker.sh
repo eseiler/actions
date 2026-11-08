@@ -13,6 +13,8 @@ apt-get install --yes --no-install-recommends \
     python3-venv \
     python3-dev \
     cppcheck \
+    openssh-client \
+    rsync \
     1>/dev/null
 rm -rf /var/lib/apt/lists/*
 
