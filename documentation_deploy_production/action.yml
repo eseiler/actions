@@ -56,11 +56,11 @@ runs:
           echo "::error title=Error::deploy_path_developer_doc must be set if source_path_developer_doc is set."
           exit 1
         fi
-        if [[ "${{ inputs.deploy_path_user_doc }}" != $(readlink -m "${{ inputs.deploy_path_user_doc }}") ]]; then
+        if [[ -n "${{ inputs.deploy_path_user_doc }}" && "${{ inputs.deploy_path_user_doc }}" != $(readlink -m "${{ inputs.deploy_path_user_doc }}") ]]; then
             echo "::error title=Error::deploy_path_user_doc must be an absolute path and not end in '/'."
             exit 1
         fi
-        if [[ "${{ inputs.deploy_path_developer_doc }}" != $(readlink -m "${{ inputs.deploy_path_developer_doc }}") ]]; then
+        if [[ -n "${{ inputs.deploy_path_developer_doc }}" && "${{ inputs.deploy_path_developer_doc }}" != $(readlink -m "${{ inputs.deploy_path_developer_doc }}") ]]; then
             echo "::error title=Error::deploy_path_developer_doc must be an absolute path and not end in '/'."
             exit 1
         fi
