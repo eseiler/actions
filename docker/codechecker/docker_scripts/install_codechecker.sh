@@ -8,17 +8,19 @@ set -Eeuxo pipefail
 
 CODECHECKER_VERSION=$1
 
+# CodeChecker 6.25.1 pins lxml 5.3.0, which has no wheels for CPython 3.14 (python3 in Debian unstable), and building
+# it from source needs the libxml2/libxslt headers. Use Python 3.13 for the venv until CodeChecker is updated.
 apt-get update 1>/dev/null
 apt-get install --yes --no-install-recommends \
-    python3-venv \
-    python3-dev \
+    python3.13-venv \
+    python3.13-dev \
     cppcheck \
     openssh-client \
     rsync \
     1>/dev/null
 rm -rf /var/lib/apt/lists/*
 
-python3 -m venv /venv/codechecker
+python3.13 -m venv /venv/codechecker
 /venv/codechecker/bin/pip --quiet --quiet install codechecker=="${CODECHECKER_VERSION}"
 
 patch_dir=$(find /venv/codechecker/ -type d -name "codechecker_report_converter")

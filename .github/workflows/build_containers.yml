@@ -52,9 +52,13 @@ jobs:
       - name: Build CodeChecker/IWYU image
         if: matrix.compiler == 'clang'
         run: |
-          { cd ./docker/codechecker && docker compose build &> build.log; } & \
-          { cd ./docker/iwyu && docker compose build &> build.log; } & \
-          wait
+          # A bare `wait` returns 0 whatever the jobs return; wait for each PID to keep their exit status.
+          (cd ./docker/codechecker && docker compose build &> build.log) & codechecker=$!
+          (cd ./docker/iwyu && docker compose build &> build.log) & iwyu=$!
+          status=0
+          wait "${codechecker}" || { echo "::error title=Build failed::codechecker (see Show logs)"; status=1; }
+          wait "${iwyu}" || { echo "::error title=Build failed::iwyu (see Show logs)"; status=1; }
+          exit "${status}"
 
       - name: List images
         continue-on-error: true
@@ -157,9 +161,12 @@ jobs:
       - name: Push CodeChecker/IWYU image
         if: github.repository_owner == 'seqan' && github.event_name != 'pull_request' && matrix.compiler == 'clang'
         run: |
-          { cd ./docker/codechecker && docker compose push; } & \
-          { cd ./docker/iwyu && docker compose push; } & \
-          wait
+          (cd ./docker/codechecker && docker compose push) & codechecker=$!
+          (cd ./docker/iwyu && docker compose push) & iwyu=$!
+          status=0
+          wait "${codechecker}" || { echo "::error title=Push failed::codechecker"; status=1; }
+          wait "${iwyu}" || { echo "::error title=Push failed::iwyu"; status=1; }
+          exit "${status}"
 
   update_wiki:
     runs-on: ubuntu-latest
