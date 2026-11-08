@@ -1,0 +1,10 @@
+# SPDX-FileCopyrightText: 2006-2026 Knut Reinert & Freie Universität Berlin
+# SPDX-FileCopyrightText: 2016-2026 Knut Reinert & MPI für molekulare Genetik
+# SPDX-License-Identifier: CC-BY-4.0
+#
+# Pinned host key of the deploy server, hashed so the host name is not published.
+# Generate:  ssh-keyscan -H -t ed25519 <DEPLOY_HOST>
+# Verify the fingerprint against the server itself before committing:
+#   on the server: ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub
+#   here:          ssh-keygen -lf <(grep -v '^#' known_hosts)
+|1|FO2yRbruWF9XPdbqwwm1SuHIAWM=|vPILKQ9CIa6Cw5h9+8OMxCfxn5w= ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIPs3SalZHIiaX3lJM6ovxbeKYURa6IExD/8FTXIo8djm

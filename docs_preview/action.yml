@@ -1,0 +1,37 @@
+# SPDX-FileCopyrightText: 2006-2026 Knut Reinert & Freie Universität Berlin
+# SPDX-FileCopyrightText: 2016-2026 Knut Reinert & MPI für molekulare Genetik
+# SPDX-License-Identifier: CC-BY-4.0
+
+name: 'Documentation Preview'
+description: 'Publish (or, with an empty source, delete) a preview on the GitHub Pages site of seqan/docs-preview.'
+inputs:
+  source:
+    description: "Directory with the rendered HTML. Empty deletes the preview."
+    required: true
+  destination:
+    description: "<owner>/<repo>/<pr>, computed from trusted event fields."
+    required: true
+  token:
+    description: "GitHub App installation token with contents: write on the preview repository only."
+    required: true
+  repository:
+    description: "Preview repository."
+    required: false
+    default: "seqan/docs-preview"
+runs:
+  using: 'composite'
+  steps:
+    - name: Update preview branch and trigger the Pages deployment
+      shell: bash
+      env:
+        SOURCE: ${{ inputs.source }}
+        DESTINATION: ${{ inputs.destination }}
+        REPOSITORY: ${{ inputs.repository }}
+        TOKEN: ${{ inputs.token }}
+        GH_TOKEN: ${{ inputs.token }}
+      run: |
+        GIT_CONFIG_VALUE_0="AUTHORIZATION: basic $(printf 'x-access-token:%s' "${TOKEN}" | base64 -w0)"
+        export GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=http.https://github.com/.extraheader GIT_CONFIG_VALUE_0
+        "${GITHUB_ACTION_PATH}/publish.sh" "${SOURCE}" "${DESTINATION}" "https://github.com/${REPOSITORY}.git" previews
+        # The content branch has no workflows; the Pages workflow on main is started explicitly.
+        gh api "repos/${REPOSITORY}/dispatches" -f event_type=preview-updated
