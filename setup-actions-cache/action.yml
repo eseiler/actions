@@ -17,8 +17,26 @@ runs:
     - name: Get Directories
       id: directories
       shell: bash
+      env:
+        # In a reusable workflow, github.workflow and github.workflow_ref are the caller's (e.g. "CI" for every stage
+        # of a staged ci.yml); job.workflow_* describe the workflow file that defines the current job.
+        WORKFLOW: ${{ github.workflow }}
+        WORKFLOW_REF: ${{ github.workflow_ref }}
+        JOB_WORKFLOW_REF: ${{ job.workflow_ref }}
+        JOB_WORKFLOW_FILE: ${{ job.workflow_file_path }}
       run: |
         set +u
+        # Workflow part of the ccache key: the workflow name, plus the file name of the called workflow for a job in a
+        # reusable workflow ("CI-ci_linux"). Otherwise all stages of a caller share one key: a later stage restores
+        # the cache an earlier stage saved in the same run, an exact key hit, so it never saves its own.
+        # Jobs defined directly in a workflow keep the old key (the name only), as does GitHub Enterprise Server,
+        # which has no job.workflow_*.
+        workflow=${WORKFLOW}
+        if [[ -n ${JOB_WORKFLOW_FILE} && ${JOB_WORKFLOW_REF} != "${WORKFLOW_REF}" ]]; then
+          file=${JOB_WORKFLOW_FILE##*/}
+          workflow+="-${file%.*}"
+        fi
+        echo "workflow=${workflow}" >> "$GITHUB_OUTPUT"
         echo "ccache=${CCACHE_DIR}" >> $GITHUB_OUTPUT
         echo "cpm=${CPM_SOURCE_CACHE}" >> $GITHUB_OUTPUT
         if [[ -n "${{ inputs.ccache_size }}" ]]; then
@@ -39,10 +57,10 @@ runs:
       uses: actions/cache@v6
       with:
         path: ${{ steps.directories.outputs.ccache }}
-        key: ccache-${{ runner.os }}-${{ github.workflow }}-${{ matrix.compiler || matrix.name || join(matrix.*, ' - ') || github.job }}-${{ github.ref }}-${{ github.run_id }}
+        key: ccache-${{ runner.os }}-${{ steps.directories.outputs.workflow }}-${{ matrix.compiler || matrix.name || join(matrix.*, ' - ') || github.job }}-${{ github.ref }}-${{ github.run_id }}
         restore-keys: |
-          ccache-${{ runner.os }}-${{ github.workflow }}-${{ matrix.compiler || matrix.name || join(matrix.*, ' - ') || github.job }}-${{ github.ref }}
-          ccache-${{ runner.os }}-${{ github.workflow }}-${{ matrix.compiler || matrix.name || join(matrix.*, ' - ') || github.job }}
+          ccache-${{ runner.os }}-${{ steps.directories.outputs.workflow }}-${{ matrix.compiler || matrix.name || join(matrix.*, ' - ') || github.job }}-${{ github.ref }}
+          ccache-${{ runner.os }}-${{ steps.directories.outputs.workflow }}-${{ matrix.compiler || matrix.name || join(matrix.*, ' - ') || github.job }}
 
     - name: Load dependency cache
       if: steps.directories.outputs.cpm != '' && steps.directories.outputs.cpm_lock != ''
