@@ -2,9 +2,14 @@
 # SPDX-FileCopyrightText: 2016-2026 Knut Reinert & MPI für molekulare Genetik
 # SPDX-License-Identifier: CC-BY-4.0
 
-# Same interface as before, plus `known_hosts`. Replaces burnett01/rsync-deployments, which ran with
-# StrictHostKeyChecking=no: the key grants the whole server (docs, ftp, ...), so it now only goes to plain ssh/rsync
-# on the runner, and only to a host whose key is pinned.
+# Copies built documentation (or CodeChecker reports) to the documentation server with rsync over SSH.
+#
+# Used by the deploy job of each repository's ci_documentation.yml and by cron_codechecker.yml, in the environment
+# `server-deploy`. The SSH key grants the whole server (docs, ftp, ...), so:
+#   - it only goes to plain ssh/rsync on the runner (the former burnett01/rsync-deployments ran with
+#     StrictHostKeyChecking=no), and only to the host whose key is pinned in known_hosts next to this file;
+#   - deploy paths must be absolute and normalised, so that a typo cannot make `rsync --delete` empty a parent
+#     directory.
 
 name: 'Deploy Documentation'
 description: 'Deploys documentation with rsync over SSH to a host with a pinned host key.'
@@ -18,10 +23,6 @@ inputs:
   deploy_ssh_key:
     description: "The private SSH key for connecting to the host."
     required: true
-  known_hosts:
-    description: "known_hosts line(s) for the host. Defaults to the hashed entry shipped with this action."
-    required: false
-    default: ""
   source_path_user_doc:
     description: "The path to the user documentation, relative to the workspace (trailing slash: copy contents)."
     required: false
@@ -48,7 +49,6 @@ runs:
         DEPLOY_HOST: ${{ inputs.deploy_host }}
         DEPLOY_USER: ${{ inputs.deploy_user }}
         DEPLOY_SSH_KEY: ${{ inputs.deploy_ssh_key }}
-        KNOWN_HOSTS: ${{ inputs.known_hosts }}
         SOURCE_USER: ${{ inputs.source_path_user_doc }}
         DEST_USER: ${{ inputs.deploy_path_user_doc }}
         SOURCE_DEV: ${{ inputs.source_path_developer_doc }}
@@ -57,6 +57,7 @@ runs:
         set -Eeuo pipefail
         fail() { echo "::error title=Error::$*"; exit 1; }
 
+        # Check the paths before touching the key.
         [[ -n ${SOURCE_USER} || -n ${SOURCE_DEV} ]] || fail "At least one of source_path_user_doc or source_path_developer_doc must be set."
         for pair in "${SOURCE_USER}|${DEST_USER}" "${SOURCE_DEV}|${DEST_DEV}"; do
           src=${pair%%|*} dst=${pair#*|}
@@ -65,17 +66,16 @@ runs:
           [[ ${dst} == "$(readlink -m "${dst}")" ]] || fail "Deploy paths must be absolute and must not end in '/'."
         done
 
+        # Key and pinned host key in a private temporary directory, removed when the step ends.
         ssh_dir=$(mktemp -d)
         trap 'rm -rf "${ssh_dir}"' EXIT
         install -m 600 /dev/null "${ssh_dir}/key"
         printf '%s\n' "${DEPLOY_SSH_KEY}" > "${ssh_dir}/key"
-        if [[ -n ${KNOWN_HOSTS} ]]; then
-          printf '%s\n' "${KNOWN_HOSTS}" > "${ssh_dir}/known_hosts"
-        else
-          grep -v '^#' "${GITHUB_ACTION_PATH}/known_hosts" > "${ssh_dir}/known_hosts" || fail "No pinned host key in known_hosts."
-        fi
+        grep -v '^#' "${GITHUB_ACTION_PATH}/known_hosts" > "${ssh_dir}/known_hosts" || fail "No pinned host key in known_hosts."
         rsh="ssh -i ${ssh_dir}/key -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=${ssh_dir}/known_hosts"
 
+        # Same rsync options as with burnett01/rsync-deployments before. <source> is relative to the workspace;
+        # a trailing slash copies its contents.
         deploy() {
           rsync --recursive --delete --timeout=60 --omit-dir-times --mkpath -e "${rsh}" \
             "${GITHUB_WORKSPACE}/$1" "${DEPLOY_USER}@${DEPLOY_HOST}:$2"

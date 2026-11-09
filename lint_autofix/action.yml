@@ -2,6 +2,10 @@
 # SPDX-FileCopyrightText: 2016-2026 Knut Reinert & MPI für molekulare Genetik
 # SPDX-License-Identifier: CC-BY-4.0
 
+# Checks the formatting bundle from Lint Autofix's `prepare` job and pushes it to the PR branch as a signed
+# seqan-actions[bot] commit. Used by the `push` job of .github/workflows/lint_autofix.yml, after the GPG key has been
+# imported. The checks are in commit.sh.
+
 name: 'Lint Autofix'
 description: 'Verify a formatting bundle and push it as a signed seqan-actions[bot] commit. See commit.sh.'
 inputs:
@@ -36,8 +40,11 @@ runs:
         HEAD_REF_FILE: ${{ inputs.head_ref_file }}
         TOKEN: ${{ inputs.token }}
       run: |
-        # Token via header from the environment: not in the URL, not in .git/config.
+        # Authenticate git with the App token as an HTTP header that git reads from the environment
+        # (GIT_CONFIG_COUNT/KEY_n/VALUE_n): the token is never written to disk or put into a URL, where it could show
+        # up in .git/config or in error messages.
         GIT_CONFIG_VALUE_0="AUTHORIZATION: basic $(printf 'x-access-token:%s' "${TOKEN}" | base64 -w0)"
         export GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=http.https://github.com/.extraheader GIT_CONFIG_VALUE_0
+
         SIGN=1 "${GITHUB_ACTION_PATH}/commit.sh" "${BUNDLE}" "https://github.com/${GITHUB_REPOSITORY}.git" "${PR}" \
           "${HEAD_SHA}" "https://github.com/${HEAD_REPO}.git" "$(cat "${HEAD_REF_FILE}")"
