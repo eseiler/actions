@@ -2,6 +2,10 @@
 # SPDX-FileCopyrightText: 2016-2026 Knut Reinert & MPI für molekulare Genetik
 # SPDX-License-Identifier: CC-BY-4.0
 
+# Publishes or deletes one documentation preview on https://seqan.github.io/docs-preview/<owner>/<repo>/<pr>/.
+# Used by .github/workflows/docs_preview.yml. publish.sh updates the `previews` branch of seqan/docs-preview; then the
+# Pages workflow on that repository's main branch is started, because a push to `previews` does not trigger it.
+
 name: 'Documentation Preview'
 description: 'Publish (or, with an empty source, delete) a preview on the GitHub Pages site of seqan/docs-preview.'
 inputs:
@@ -27,11 +31,15 @@ runs:
         SOURCE: ${{ inputs.source }}
         DESTINATION: ${{ inputs.destination }}
         REPOSITORY: ${{ inputs.repository }}
-        TOKEN: ${{ inputs.token }}
-        GH_TOKEN: ${{ inputs.token }}
+        TOKEN: ${{ inputs.token }}   # for git (see below)
+        GH_TOKEN: ${{ inputs.token }} # for gh
       run: |
+        # Authenticate git with the App token as an HTTP header that git reads from the environment
+        # (GIT_CONFIG_COUNT/KEY_n/VALUE_n): the token is never written to disk or put into a URL.
         GIT_CONFIG_VALUE_0="AUTHORIZATION: basic $(printf 'x-access-token:%s' "${TOKEN}" | base64 -w0)"
         export GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=http.https://github.com/.extraheader GIT_CONFIG_VALUE_0
+
         "${GITHUB_ACTION_PATH}/publish.sh" "${SOURCE}" "${DESTINATION}" "https://github.com/${REPOSITORY}.git" previews
-        # The content branch has no workflows; the Pages workflow on main is started explicitly.
+
+        # Start the Pages workflow (pages.yml on main, `on: repository_dispatch`); needs contents: write.
         gh api "repos/${REPOSITORY}/dispatches" -f event_type=preview-updated

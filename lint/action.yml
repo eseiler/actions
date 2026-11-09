@@ -2,6 +2,13 @@
 # SPDX-FileCopyrightText: 2016-2026 Knut Reinert & MPI für molekulare Genetik
 # SPDX-License-Identifier: CC-BY-4.0
 
+# Formats the files a PR changed, in place. It only changes the work tree: no commit, no token, no secrets.
+#
+# Used in two places, which therefore always agree:
+#   - CI (`ci_lint.yml`): after this action, `git diff` decides whether Lint passes.
+#   - Lint Autofix (`prepare`): formats the PR head; the bot then commits the result.
+# The rules are in format.sh; the formatters are pinned with hashes in requirements.txt.
+
 name: 'Lint'
 description: 'Format changed files in place with pinned clang-format and cmake-format. Needs no token and no secrets.'
 inputs:
@@ -19,6 +26,8 @@ inputs:
 runs:
   using: 'composite'
   steps:
+    # A private venv, so that the runner's Python packages play no role. --require-hashes with --no-deps and
+    # --only-binary installs exactly the listed wheels or fails.
     - name: Install formatters
       shell: bash
       run: |
