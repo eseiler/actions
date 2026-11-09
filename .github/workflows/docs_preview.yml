@@ -11,7 +11,9 @@
 # job that uses it, so it comes from `docs-preview`.
 #
 #   publish  After the caller's Documentation workflow succeeded on a PR: take its `documentation` artifact and
-#            publish it (actions/docs_preview), then comment the URL.
+#            publish it (actions/docs_preview), then comment the URL. With `developer_documentation: true` (seqan3,
+#            sharg-parser), the artifacts `documentation` and `documentation-developer` become <pr>/user/ and
+#            <pr>/developer/ below a landing page, as with the former documentation_deploy_preview.
 #   delete   When the PR is closed (`pull_request_target`, no checkout): delete the preview.
 #
 # No server access: the App token only reaches seqan/docs-preview (contents) and the caller repository (PR comments).
@@ -35,11 +37,19 @@
 #         pull-requests: read
 #       secrets:
 #         SEQAN_PR_BOT_KEY: ${{ secrets.SEQAN_PR_BOT_KEY }}
+#       # with:
+#       #   developer_documentation: true   # repositories with user and developer documentation
 
 name: Documentation Preview
 
 on:
   workflow_call:
+    inputs:
+      developer_documentation:
+        description: "Also publish artifact `documentation-developer`: user/, developer/ and a landing page."
+        type: boolean
+        required: false
+        default: false
     # `required: false` because that is the tested form (probe, 2026-11-09); it must be passed.
     secrets:
       SEQAN_PR_BOT_KEY:
@@ -87,12 +97,22 @@ jobs:
 
       # All further steps run only if the PR was found.
 
+      # One documentation: it is the preview. User and developer documentation: user/ and developer/.
       - name: Download documentation
         if: steps.pr.outputs.number
         uses: actions/download-artifact@v8 # locked via actions.lock
         with:
           name: documentation
-          path: ${{ runner.temp }}/untrusted/html
+          path: ${{ runner.temp }}/untrusted/html${{ inputs.developer_documentation && '/user' || '' }}
+          run-id: ${{ github.event.workflow_run.id }}
+          github-token: ${{ github.token }}
+
+      - name: Download developer documentation
+        if: steps.pr.outputs.number && inputs.developer_documentation
+        uses: actions/download-artifact@v8 # locked via actions.lock
+        with:
+          name: documentation-developer
+          path: ${{ runner.temp }}/untrusted/html/developer
           run-id: ${{ github.event.workflow_run.id }}
           github-token: ${{ github.token }}
 
@@ -114,6 +134,7 @@ jobs:
           source: ${{ runner.temp }}/untrusted/html
           destination: ${{ github.repository }}/${{ steps.pr.outputs.number }}
           token: ${{ steps.preview_token.outputs.token }}
+          landing_page: ${{ inputs.developer_documentation }}
 
       - name: Token for PR comments
         if: steps.pr.outputs.number

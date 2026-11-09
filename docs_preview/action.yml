@@ -5,6 +5,11 @@
 # Publishes or deletes one documentation preview on https://seqan.github.io/docs-preview/<owner>/<repo>/<pr>/.
 # Used by .github/workflows/docs_preview.yml. publish.sh updates the `previews` branch of seqan/docs-preview; then the
 # Pages workflow on that repository's main branch is started, because a push to `previews` does not trigger it.
+#
+# Layouts, as with the former documentation_deploy_preview:
+#   one documentation        <pr>/ is the documentation itself.
+#   user and developer docs  <pr>/user/ and <pr>/developer/, plus the SeqAn landing page (landing/) at <pr>/ that
+#                            links both (`landing_page: true`).
 
 name: 'Documentation Preview'
 description: 'Publish (or, with an empty source, delete) a preview on the GitHub Pages site of seqan/docs-preview.'
@@ -22,9 +27,29 @@ inputs:
     description: "Preview repository."
     required: false
     default: "seqan/docs-preview"
+  landing_page:
+    description: "'true': source contains exactly the directories user/ and developer/; add the landing page linking them."
+    required: false
+    default: "false"
 runs:
   using: 'composite'
   steps:
+    # The two directories come from the PR's build. They must be the only entries and real directories, so that
+    # adding the landing page cannot write through a symlink or replace a file of the preview.
+    - name: Add the landing page
+      if: inputs.landing_page == 'true'
+      shell: bash
+      env:
+        SOURCE: ${{ inputs.source }}
+      run: |
+        set -Eeuo pipefail
+        entries=$(find "${SOURCE}" -mindepth 1 -maxdepth 1 -printf '%y %P\n' | sort)
+        if [[ ${entries} != $'d developer\nd user' ]]; then
+          echo "::error::With landing_page, the preview must contain exactly the directories user/ and developer/."
+          exit 1
+        fi
+        cp "${GITHUB_ACTION_PATH}"/landing/{index.html,style.css,seqan_logo.svg} "${SOURCE}/"
+
     - name: Update preview branch and trigger the Pages deployment
       shell: bash
       env:
