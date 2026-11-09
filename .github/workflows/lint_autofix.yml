@@ -1,0 +1,241 @@
+# SPDX-FileCopyrightText: 2006-2026 Knut Reinert & Freie Universität Berlin
+# SPDX-FileCopyrightText: 2016-2026 Knut Reinert & MPI für molekulare Genetik
+# SPDX-License-Identifier: CC-BY-4.0
+
+# Lint Autofix: when CI fails on a PR because of formatting, push the formatting fix to the PR branch as a signed
+# seqan-actions[bot] commit. The new commit starts CI again.
+#
+# Called from each repository's .github/workflows/lint_autofix.yml (`on: workflow_run` after CI). A called workflow
+# runs in the caller's context: `github.event` is the caller's workflow_run event, and the environment `pr-bot` with
+# its secrets belongs to the caller repository. The caller passes exactly the three secrets declared below; GitHub
+# resolves them with the environment of the job that uses them (`push`), so they come from `pr-bot`.
+#
+# Two jobs, so that the job holding the secrets never touches PR files:
+#   prepare  No secrets. Finds the PR, formats its head (fetched as data, never executed) and, if anything changed,
+#            uploads the result as a git bundle. Runs after every failed CI run of a PR (about 10 s); if Lint was not
+#            the reason, formatting changes nothing and the workflow ends here.
+#   push     Environment `pr-bot`. Re-checks the PR, verifies the bundle (commit.sh), re-creates the commit as
+#            seqan-actions[bot] with the GPG key and pushes it with a seqan-pr-bot token. If the PR does not allow
+#            edits by maintainers, it comments instead.
+#
+# Nothing from the PR reaches a `run:` script through ${{ }}: branch names, file names and the bundle are env/data.
+#
+# Caller (.github/workflows/lint_autofix.yml in the repository):
+#
+#   on:
+#     workflow_run:
+#       workflows: [CI]
+#       types: [completed]
+#   permissions: {}
+#   jobs:
+#     autofix:
+#       uses: seqan/actions/.github/workflows/lint_autofix.yml@main
+#       permissions:
+#         contents: read
+#         pull-requests: read
+#       secrets:
+#         SEQAN_PR_BOT_KEY: ${{ secrets.SEQAN_PR_BOT_KEY }}
+#         SEQAN_ACTIONS_GPG_KEY: ${{ secrets.SEQAN_ACTIONS_GPG_KEY }}
+#         SEQAN_ACTIONS_GPG_PASSPHRASE: ${{ secrets.SEQAN_ACTIONS_GPG_PASSPHRASE }}
+
+name: Lint Autofix
+
+on:
+  workflow_call:
+    # `required: false` because that is the tested form (probe, 2026-11-09); all three must be passed.
+    secrets:
+      SEQAN_PR_BOT_KEY:
+        description: "Private key of the seqan-pr-bot App (environment pr-bot)."
+        required: false
+      SEQAN_ACTIONS_GPG_KEY:
+        description: "Armored GPG secret key of seqan-actions[bot] (environment pr-bot)."
+        required: false
+      SEQAN_ACTIONS_GPG_PASSPHRASE:
+        description: "Passphrase of that key (environment pr-bot)."
+        required: false
+
+permissions: {}
+
+defaults:
+  run:
+    shell: bash -Eeuo pipefail {0}
+
+jobs:
+  prepare:
+    name: Prepare
+    if: >-
+      github.repository_owner == 'seqan' &&
+      github.event_name == 'workflow_run' &&
+      github.event.workflow_run.event == 'pull_request' &&
+      github.event.workflow_run.conclusion == 'failure'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      pr: ${{ steps.pr.outputs.number }}
+      head_sha: ${{ steps.pr.outputs.head_sha }}
+      changed: ${{ steps.bundle.outputs.changed }}
+    steps:
+      # The event names the commit and branch CI ran on, but not the PR for fork PRs (`pull_requests` is empty), so
+      # look it up. Skip if the PR has a newer head by now: the CI run for that one decides.
+      - name: Resolve PR from trusted event data
+        id: pr
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HEAD_OWNER: ${{ github.event.workflow_run.head_repository.owner.login }}
+          HEAD_BRANCH: ${{ github.event.workflow_run.head_branch }}
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          gh api -X GET "repos/${GITHUB_REPOSITORY}/pulls" -f state=open -f head="${HEAD_OWNER}:${HEAD_BRANCH}" \
+            | jq --arg sha "${HEAD_SHA}" 'map(select(.head.sha == $sha)) | first // empty' > "${RUNNER_TEMP}/pr.json"
+          if [[ ! -s ${RUNNER_TEMP}/pr.json ]]; then
+            echo "::notice::No open PR has head ${HEAD_SHA}; nothing to do."
+            exit 0
+          fi
+          {
+            echo "number=$(jq -r .number "${RUNNER_TEMP}/pr.json")"
+            echo "base_sha=$(jq -r .base.sha "${RUNNER_TEMP}/pr.json")"
+            echo "head_sha=${HEAD_SHA}"
+          } >> "${GITHUB_OUTPUT}"
+
+      # All further steps run only if the PR was found.
+
+      # A full clone of the repository (trusted), for the history that the merge base and the bundle need.
+      - name: Checkout default branch
+        if: steps.pr.outputs.number
+        uses: actions/checkout@v7 # locked via actions.lock
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      # The PR head as a separate work tree, with git hooks disabled. Deliberately not actions/checkout: its fork
+      # guard exists because checked-out code usually gets executed. Here the files are only read and rewritten by
+      # the pinned formatters, in a job without secrets.
+      - name: Fetch PR head as data
+        if: steps.pr.outputs.number
+        env:
+          PR: ${{ steps.pr.outputs.number }}
+          HEAD_SHA: ${{ steps.pr.outputs.head_sha }}
+        run: |
+          git fetch -q --no-tags origin "+refs/pull/${PR}/head:refs/autofix/head"
+          test "$(git rev-parse refs/autofix/head)" = "${HEAD_SHA}"
+          git -c core.hooksPath=/dev/null worktree add -q --detach "${RUNNER_TEMP}/pr" "${HEAD_SHA}"
+
+      # Same action and rules as the Lint check in CI.
+      - name: Format
+        if: steps.pr.outputs.number
+        uses: seqan/actions/lint@main
+        with:
+          path: ${{ runner.temp }}/pr
+          base: ${{ steps.pr.outputs.base_sha }}
+
+      # One commit on top of the PR head, as a bundle that holds just that commit. Its author and message do not
+      # matter: `push` only takes the tree.
+      - name: Bundle result
+        id: bundle
+        if: steps.pr.outputs.number
+        working-directory: ${{ runner.temp }}/pr
+        env:
+          HEAD_SHA: ${{ steps.pr.outputs.head_sha }}
+        run: |
+          if git diff --quiet; then
+            echo "changed=false" >> "${GITHUB_OUTPUT}"
+            exit 0
+          fi
+          git add -u
+          git -c user.name=autofix -c user.email=autofix@invalid -c commit.gpgsign=false -c core.hooksPath=/dev/null \
+            commit -q --no-verify -m autofix
+          mkdir -p "${RUNNER_TEMP}/autofix"
+          git bundle create -q "${RUNNER_TEMP}/autofix/autofix.bundle" HEAD "^${HEAD_SHA}"
+          echo "changed=true" >> "${GITHUB_OUTPUT}"
+
+      - name: Upload bundle
+        if: steps.bundle.outputs.changed == 'true'
+        uses: actions/upload-artifact@v7 # locked via actions.lock
+        with:
+          name: autofix
+          path: ${{ runner.temp }}/autofix/autofix.bundle
+          retention-days: 1
+
+  push:
+    name: Push
+    needs: prepare
+    if: needs.prepare.outputs.changed == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: pr-bot # deployment branch: main; holds SEQAN_PR_BOT_KEY and the GPG key
+    permissions:
+      pull-requests: read
+    steps:
+      # Time has passed since `prepare`: the PR must still be open and at the same head. A fork PR must allow edits
+      # by maintainers, or the bot cannot push to it. The branch name is chosen by the contributor, so it goes into a
+      # file, not into a step output that later steps would expand.
+      - name: Re-check PR
+        id: pr
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ needs.prepare.outputs.pr }}
+          HEAD_SHA: ${{ needs.prepare.outputs.head_sha }}
+        run: |
+          gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR}" > "${RUNNER_TEMP}/pr.json"
+          jq -e --arg sha "${HEAD_SHA}" '.state == "open" and .head.sha == $sha' "${RUNNER_TEMP}/pr.json" > /dev/null
+          head_repo=$(jq -r .head.repo.full_name "${RUNNER_TEMP}/pr.json")
+          if [[ ${head_repo} != "${GITHUB_REPOSITORY}" ]] && ! jq -e .maintainer_can_modify "${RUNNER_TEMP}/pr.json" > /dev/null; then
+            echo "pushable=false" >> "${GITHUB_OUTPUT}"
+            exit 0
+          fi
+          jq -j .head.ref "${RUNNER_TEMP}/pr.json" > "${RUNNER_TEMP}/head_ref"
+          { echo "pushable=true"; echo "head_repo=${head_repo}"; } >> "${GITHUB_OUTPUT}"
+
+      - name: Download bundle
+        if: steps.pr.outputs.pushable == 'true'
+        uses: actions/download-artifact@v8 # locked via actions.lock
+        with:
+          name: autofix
+          path: ${{ runner.temp }}/autofix
+
+      # Needed in both cases: to push, or to comment.
+      - name: Create App token
+        id: token
+        uses: actions/create-github-app-token@v3 # locked via actions.lock
+        with:
+          client-id: ${{ vars.SEQAN_PR_BOT_CLIENT_ID }}
+          private-key: ${{ secrets.SEQAN_PR_BOT_KEY }}
+          repositories: ${{ github.event.repository.name }}
+          permission-contents: write
+          permission-pull-requests: write
+
+      # Imports the key and caches its passphrase in gpg-agent. There is no checkout in this job, so the signing key
+      # goes into the global git config, which commit.sh's private repository reads.
+      - name: Import GPG key
+        if: steps.pr.outputs.pushable == 'true'
+        uses: crazy-max/ghaction-import-gpg@v7 # locked via actions.lock
+        with:
+          gpg_private_key: ${{ secrets.SEQAN_ACTIONS_GPG_KEY }}
+          passphrase: ${{ secrets.SEQAN_ACTIONS_GPG_PASSPHRASE }}
+          git_user_signingkey: true
+          git_config_global: true
+
+      # Verifies the bundle, commits its tree as seqan-actions[bot] (signed) and pushes without --force.
+      - name: Commit and push
+        if: steps.pr.outputs.pushable == 'true'
+        uses: seqan/actions/lint_autofix@main
+        with:
+          bundle: ${{ runner.temp }}/autofix/autofix.bundle
+          pr: ${{ needs.prepare.outputs.pr }}
+          head_sha: ${{ needs.prepare.outputs.head_sha }}
+          head_repo: ${{ steps.pr.outputs.head_repo }}
+          head_ref_file: ${{ runner.temp }}/head_ref
+          token: ${{ steps.token.outputs.token }}
+
+      - name: Explain why nothing was pushed
+        if: steps.pr.outputs.pushable == 'false'
+        env:
+          GH_TOKEN: ${{ steps.token.outputs.token }}
+          PR: ${{ needs.prepare.outputs.pr }}
+        run: |
+          gh pr comment "${PR}" -R "${GITHUB_REPOSITORY}" --body \
+            "Formatting is required, but this PR does not allow edits by maintainers, so the bot cannot push the fix. \
+          Enable \"Allow edits by maintainers\" or apply the diff from the Lint job summary."
