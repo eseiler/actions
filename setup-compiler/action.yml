@@ -6,7 +6,7 @@ name: 'Setup Compiler'
 description: 'Installs a compiler'
 inputs:
   compiler:
-    description: "Compiler to install, e.g., gcc-13 or clang-17 or intel-2023.2.1 (intel for latest)"
+    description: "Compiler to install, e.g., gcc-latest, gcc-14, clang-latest or clang-21"
     required: true
 runs:
   using: 'composite'
@@ -16,15 +16,8 @@ runs:
 
   - name: Install GCC
     if: contains(inputs.compiler, 'gcc')
-    id: install_gcc
     shell: bash
     run: ${GITHUB_ACTION_PATH}/install_gcc.sh ${{ inputs.compiler }}
-
-  - name: Patch M1 GCC
-    if: contains(inputs.compiler, 'gcc') && runner.os == 'macOS'
-    uses: seqan/actions/patch-m1-gcc@main
-    with:
-      compiler: ${{ steps.install_gcc.outputs.gcc }}
 
   - name: Install Clang
     if: contains(inputs.compiler, 'clang')
@@ -35,11 +28,6 @@ runs:
     if: runner.os == 'macOS'
     shell: bash
     run: ${GITHUB_ACTION_PATH}/select_sdk.sh
-
-  - name: Install Intel
-    if: contains(inputs.compiler, 'intel')
-    shell: bash
-    run: ${GITHUB_ACTION_PATH}/install_intel.sh ${{ inputs.compiler }}
 
   - name: Export configs
     shell: bash

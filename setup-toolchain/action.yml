@@ -6,7 +6,7 @@ name: 'Setup CI tools'
 description: 'Installs a compiler, ccache, and actions/cache'
 inputs:
   compiler:
-    description: "Compiler to install, e.g., gcc-13 or clang-17 or intel-2023.2.1"
+    description: "Compiler to install, e.g., gcc-latest, gcc-14, clang-latest or clang-21"
     required: true
   ccache_size:
     description: "The ccache maximum size."
@@ -15,13 +15,26 @@ inputs:
 runs:
   using: 'composite'
   steps:
+  # Also sets up the package manager (and the `install` command) for the steps below.
   - name: Install compiler
     uses: seqan/actions/setup-compiler@main
     with:
       compiler: ${{ inputs.compiler }}
 
-  - name: Install ccache and setup actions/cache
-    uses: seqan/actions/setup-cache@main
-    with:
-      ccache_size: ${{ inputs.ccache_size }}
+  - name: Install ccache
+    shell: bash
+    run: install ccache
 
+  - name: Export ccache config
+    shell: bash
+    run: |
+      echo "CCACHE_BASEDIR=${{ github.workspace }}" >> "$GITHUB_ENV"
+      echo "CCACHE_DIR=${{ github.workspace }}/.ccache" >> "$GITHUB_ENV"
+      echo "CCACHE_COMPILERCHECK=content" >> "$GITHUB_ENV"
+      echo "CCACHE_COMPRESS=true" >> "$GITHUB_ENV"
+      echo "CCACHE_COMPRESSLEVEL=12" >> "$GITHUB_ENV"
+      echo "CCACHE_MAXSIZE=${{ inputs.ccache_size }}" >> "$GITHUB_ENV"
+      echo "CCACHE_IGNOREOPTIONS=-fprofile-abs-path" >> "$GITHUB_ENV"
+
+  - name: Setup Cache
+    uses: seqan/actions/setup-actions-cache@main
