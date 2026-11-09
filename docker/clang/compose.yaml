@@ -3,13 +3,6 @@
 # SPDX-License-Identifier: CC-BY-4.0
 
 services:
-  clang-20:
-    image: ghcr.io/seqan/clang-20
-    pull_policy: never
-    build:
-      args:
-        CLANG_VERSION: 20
-
   clang-21:
     image: ghcr.io/seqan/clang-21
     pull_policy: never
