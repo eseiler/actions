@@ -24,4 +24,3 @@ esac
 install "${COMPILER}"
 echo "CC=${COMPILER}" >> "${GITHUB_ENV}"
 echo "CXX=${COMPILER/gcc/g++}" >> "${GITHUB_ENV}"
-echo "gcc=${COMPILER}" >> "${GITHUB_OUTPUT}"
