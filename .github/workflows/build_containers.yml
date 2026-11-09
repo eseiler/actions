@@ -170,6 +170,7 @@ jobs:
 
   update_wiki:
     runs-on: ubuntu-latest
+    environment: wiki # deployment branch: main; holds the GPG key and passphrase
     if: github.repository_owner == 'seqan' && github.event_name != 'pull_request'
     needs: build
     steps:
