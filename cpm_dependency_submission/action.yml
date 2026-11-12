@@ -1,0 +1,38 @@
+# SPDX-FileCopyrightText: 2006-2026 Knut Reinert & Freie Universität Berlin
+# SPDX-FileCopyrightText: 2016-2026 Knut Reinert & MPI für molekulare Genetik
+# SPDX-License-Identifier: CC-BY-4.0
+
+# Submits the packages of a CPM package lock and the CPM version of the triggering commit to the dependency graph.
+# Meant for `on: push` to the default branch, filtered to the package lock and CPM.cmake, so that every change is in
+# the graph as soon as it is merged.
+#
+# Problems (e.g. a disabled dependency graph or missing permissions) are warnings and never fail the job.
+# Package URLs and supported CPM declarations: see dependency_snapshot.cmake.
+
+name: 'CPM Dependency Submission'
+description: 'Submits the packages of a CPM package-lock file and the CPM version to the dependency graph'
+inputs:
+  package_lock_file:
+    description: "Path to CPM's package lock file."
+    required: true
+  token:
+    description: "Token with contents: write. The default needs `permissions: contents: write` in the job."
+    required: false
+    default: ${{ github.token }}
+runs:
+  using: 'composite'
+  steps:
+    - name: Checkout
+      uses: actions/checkout@v7
+      with:
+        path: cpm_dependency_submission
+        persist-credentials: false
+
+    - name: Submit dependency snapshot
+      continue-on-error: true
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.token }}
+        PACKAGE_LOCK_FILE: ${{ inputs.package_lock_file }}
+        DETECTOR_VERSION: ${{ github.action_ref }}
+      run: '"${GITHUB_ACTION_PATH}/dependency_snapshot.sh" "${GITHUB_WORKSPACE}/cpm_dependency_submission" "${PACKAGE_LOCK_FILE}"'
