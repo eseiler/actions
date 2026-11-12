@@ -16,7 +16,7 @@
 #   remote  URL of the preview repository. Authentication is expected in GIT_CONFIG_* (see action.yml), not in the URL.
 #   branch  Content branch, default `previews`.
 #
-# Environment: PREVIEW_MAX_MIB (default 200) limits the size of one preview.
+# Environment: PREVIEW_MAX_MIB (default 500) limits the size of one preview.
 #
 # Why it looks like this:
 #   - The HTML was built from PR code, so it is untrusted data. It is only hashed into git objects; nothing from it is
@@ -35,7 +35,7 @@ src=$1
 dest=$2
 remote=$3
 branch=${4:-previews}
-max_mib=${PREVIEW_MAX_MIB:-200}
+max_mib=${PREVIEW_MAX_MIB:-500}
 
 die() {
     echo "::error::$*" >&2
